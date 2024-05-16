@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.0/color-thief.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Grid Planner / Photo Colors Analyzer</title>
+    <style>
+        input[type=file]::file-selector-button {
+            margin: 10px;
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #af594c;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        input[type=file]::file-selector-button:hover {
+            background-color: #8c81ec;
+        }
+        body {
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        }
+        h1 {
+            margin: 10px;
+        }
+        .block {
+            display: inline-block;
+            padding: 10px 30px 0 0;
+            cursor: move;
+            position: relative;
+        }
+        .remove { 
+            display: none;
+        }
+        .block:hover .remove {
+            color: rgba(255, 255, 255, 0.7);
+            cursor: pointer;
+            transform: rotate(45deg);
+            top: 10px;
+            right: 40px;
+            font-size: 24px;
+            position: absolute;
+            display: block;
+        }
+        #checkboxLabel {
+            display: none;
+        }
+        #feedback {
+            font-size: 24;
+            padding: 10px 0 0 10px;
+            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+        }
+        .hideLegend .mainColor, 
+        .hideLegend .accentColor,
+        .hideLegend .paletteColor {
+            display: none;
+        }
+        .previewImage {
+            width: 400px;
+            height: 400px;
+            object-fit: cover;
+        }
+        .mainColor, .accentColor {
+            margin-top: -150px;
+            border: 10px solid white;
+            width: 100px;
+            height: 100px;
+            line-height: 100px;
+            display: inline-block;
+            border-radius: 50%;
+            color: white;
+            text-align: center;
+        }
+        .paletteColor {
+            width: 40px;
+            height: 40px;
+            display: inline-block;
+        }
+        .accentColor {
+            font-size: 10px;
+            width: 60px;
+            height: 60px;
+            line-height: 60px;
+            margin-left: -10px;
+        }
+        #disclaimer {
+            opacity: 0.3;
+            padding: 0 0 0 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Grid Planner / Photo Colors Analyzer</h1>
+    <input type="file" id="fileInput" accept="image/*" multiple>
+    <label for="checkbox" id="checkboxLabel">
+        <input type="checkbox" id="checkbox" checked />
+        Show legend / only images
+    </label>
+    <br/>
+    <span id="feedback">
+        Copy-paste an image or upload multiple images. They will be ordered automatically by color hues.
+    </span>
+    <hr/>
+    <div id="loading"></div>
+    <div id="sorted"></div>
+    <div id="disclaimer">
+        <h3>How it works</h3>
+        <ul>
+            <li>You upload a photo or multiple photos</li>
+            <li>Only images can be uploaded</li>
+            <li>Magic happens only here, we are not saving anything</li>
+            <li>If you refresh the page, you start over</li>
+            <li>(Therefore, you don't need to register, you cannot save etc)</li>
+            <li>Color analyzing is done programmatically. Means, it is not perfect</li>
+            <li>Photo is analyzed pixel by pixel on upload to get main hue and color palette</li>
+            <li>We are trying to calculate accent color based on these: the one from the palette farthest from all the rest of the colors</li>
+            <li>You can drag photo to reorder</li>
+            
+        </ul>
+    </div>
+    <script>
+        let model = [];
+        const html = {
+            loading: document.getElementById("loading"),
+            feedback: document.getElementById("feedback"),
+            fileInput: document.getElementById('fileInput'),
+            sorted: document.getElementById("sorted"),
+            checkbox: document.getElementById('checkbox'),
+        }
+
+        function uploadImage(file, files){
+            console.log("Reading file", file.name);
+            console.time(`FILE READ ${file.name}`);
+
+            const block = document.createElement('div');
+            block.classList.add('block');
+            block.id = file.name;
+            const removeBlock = document.createElement('div');
+            removeBlock.classList.add('remove');
+            removeBlock.setAttribute('title', 'Remove image');
+            removeBlock.innerText = '+';
+            removeBlock.addEventListener('click', (event) => {
+                document.getElementById(file.name).remove();
+                model = model.filter(n => n.file !== file.name);
+                console.log('Image removed', file.name, model);
+            });
+            block.append(removeBlock);
+
+            const reader = new FileReader();
+            reader.onload = function() {
+                const image = new Image();
+                image.src = reader.result;
+
+                image.onload = function() {
+                    const previewImage = document.createElement('img');
+                    previewImage.src = reader.result;
+                    previewImage.classList.add('previewImage');
+                    block.append(previewImage);
+
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+
+                    canvas.width = image.width;
+                    canvas.height = image.height;
+
+                    context.drawImage(image, 0, 0, image.width, image.height);
+
+                    const colorThief = new ColorThief();
+                    const rgb = {
+                        main: colorThief.getColor(image),
+                        palette: colorThief.getPalette(image)
+                    }
+
+                    const hsl = {
+                        main: rgbToHsl(rgb.main[0], rgb.main[1], rgb.main[2]),
+                        palette: rgb.palette.map(([r, g, b]) => rgbToHsl(r, g, b)),
+                        accentColor: []
+                    }
+
+                    hsl.accentColor = getAccentColor( 
+                        [hsl.main].concat(hsl.palette)
+                    );
+
+                    model.push({
+                        file: file.name,
+                        mainColor: hsl.main, // [h,s,v]
+                        palette: hsl.palette, // [[h,s,v],[h,s,v],[h,s,v]]
+                        accentColor: hsl.accentColor
+                    });
+
+                    const mainColorDiv = document.createElement('div');
+                    mainColorDiv.classList.add('mainColor');
+                    mainColorDiv.style.backgroundColor = `hsl(${hsl.main[0]} ${hsl.main[1]}% ${hsl.main[2]}%)`;
+                    mainColorDiv.innerText = 'hue: ' + Math.ceil(hsl.main[0]);
+
+                    const accentColorDiv = document.createElement('div');
+                    accentColorDiv.classList.add('accentColor');
+                    accentColorDiv.style.backgroundColor = `hsl(${hsl.accentColor[0]} ${hsl.accentColor[1]}% ${hsl.accentColor[2]}%)`;
+                    accentColorDiv.innerText = 'accent: ' + Math.ceil(hsl.accentColor[0]);
+
+                    block.setAttribute('title', `File: ${file.name}\nMain color:    hsl(${hsl.main[0]}, ${hsl.main[1]}%, ${hsl.main[2]}%) \nAccent color: hsl(${hsl.accentColor[0]}, ${hsl.accentColor[1]}%, ${hsl.accentColor[2]}%)`);
+                    block.append(document.createElement('br'));
+                    block.append(mainColorDiv);
+                    block.append(accentColorDiv);
+                    block.append(document.createElement('br'));
+
+                    hsl.palette.forEach(([h, s, l]) => {
+                        const colorDiv = document.createElement('div');
+                        colorDiv.setAttribute('title', `hsl(${h} ${s}% ${l}%)`);
+                        colorDiv.classList.add('paletteColor');
+                        colorDiv.style.backgroundColor = `hsl(${h} ${s}% ${l}%)`;
+                        block.append(colorDiv);
+                    });
+                    html.loading.append(block);
+                    html.feedback.innerText = "Uploading, analyzing colors, reordering... please wait";
+
+                    console.timeEnd(`FILE READ ${file.name}`);
+                    // only run once, after the last one uploaded
+                    if(files.length === html.loading.childElementCount){
+                        // calculate hue distances
+                        const hueSorted = sortByHue(model);
+                        // log the model
+                        console.group('GENERAL COLOR INFORMATION');
+                        console.log('model', model);
+                        console.log('hueSorted', hueSorted);
+                        console.groupEnd('GENERAL COLOR INFORMATION');
+
+                        hueSorted.forEach(item => {
+                            const sortedBlock = document.getElementById(item.file);
+                            html.sorted.append(sortedBlock);
+                        });
+                        // drag n drop sort
+                        new Sortable(html.sorted);
+                        html.feedback.innerText = "Upload finished, photos ordered based on hues. Drag photo to reorder. Click x to remove";
+                        document.getElementById('checkboxLabel').style.display = 'inline-block';
+                        console.log('>> FINISHED <<');
+                        console.timeEnd(`FILE UPLOADS`);
+                        console.groupEnd(`FILE UPLOADS`);
+                    }
+                };
+            };
+            reader.readAsDataURL(file);
+        };
+
+        document.addEventListener('paste', async (event) => {
+            event.preventDefault();
+            console.log('PASTE', event);
+            for (const clipboardItem of event.clipboardData.files) {
+                if (clipboardItem.type.startsWith('image/')) {
+                    uploadImage(clipboardItem, [...event.clipboardData.files]);
+                }
+            }
+        });
+
+        fileInput.addEventListener('change', function(event) {
+            console.group(`FILE UPLOADS`);
+            console.time(`FILE UPLOADS`);
+            [...event.target.files].forEach(file => uploadImage(file, [...event.target.files]));
+        });
+
+        html.checkbox.addEventListener('change', (event) => {
+            html.sorted.classList.toggle("hideLegend");
+        });
+
+        // hue sorting:
+        function sortByHue (model) { 
+            return model.slice().sort((a, b) => a.mainColor[0] - b.mainColor[0])
+        };
+
+        // average n hue: 
+        function avgNHue (model, n) {
+            return model.map(item => ({
+                ...item,
+                mainPlusPalette: [item.mainColor].concat(item.palette),
+                avgFirstN: calculateAverageHue([item.mainColor].concat(item.palette).slice(0, n).map(c => c[0]))
+            })).slice().sort((a, b) => a.avgFirstN - b.avgFirstN)
+        };
+
+        // get accent color: 
+        function getAccentColor (palette) { 
+            // find the highest saturation [h,s,l] => [,s(max),]
+            // return palette.sort((a, b) => b[1] - a[1])[0]; 
+
+            const avgHue = calculateAverageHue(palette.map(c => c[0]));
+            const sortedByAvgHueDistance = palette.slice().sort((a, b) => {
+                const hue1 = a[0],
+                    hue2 = b[0],
+                    diff1 = hueDistance(hue1, avgHue),
+                    diff2 = hueDistance(hue2, avgHue),
+                    result = diff1 > diff2 ? -1 : 1;
+                return result;
+            });
+            
+            console.group('get accent color');
+            console.log(`palette:`, palette);
+            console.log(`avgHue: ${avgHue}`);
+            console.log(`sortedByAvgHueDistance:`, sortedByAvgHueDistance);
+            console.groupEnd('get accent color');
+            return sortedByAvgHueDistance[0];
+        };
+
+        // calculate hue distance
+        function hueDistance(hue1, hue2) {
+            const difference = Math.abs(hue1 - hue2);
+            if (difference <= 180) {
+                return difference;
+            } else {
+                return 360 - difference;
+            }
+        };
+
+        // calculateAverageHue([hue, hue, hue])
+        function calculateAverageHue(hues) {
+            // Convert each hue to radians for circular arithmetic
+            const radians = hues.map(hue => hue * Math.PI / 180);
+
+            // Calculate x and y components of the average direction vector
+            const sumX = radians.reduce((sum, hue) => sum + Math.cos(hue), 0);
+            const sumY = radians.reduce((sum, hue) => sum + Math.sin(hue), 0);
+
+            // Calculate the angle (in radians) of the average direction vector
+            const averageRadians = Math.atan2(sumY / hues.length, sumX / hues.length);
+
+            // Convert average radians back to degrees and ensure the result is non-negative
+            let averageHue = averageRadians * 180 / Math.PI;
+            if (averageHue < 0) {
+                averageHue += 360; // Normalize to be within 0-360 degrees
+            }
+            return averageHue;
+        };
+
+        // RGB to HSL color space
+        function rgbToHsl(r, g, b) {
+            r /= 255, g /= 255, b /= 255;
+
+            var max = Math.max(r, g, b), min = Math.min(r, g, b);
+            var h, s, l = (max + min) / 2;
+
+            if (max == min) {
+                h = s = 0; // achromatic
+            } else {
+                var d = max - min;
+                s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+                switch (max) {
+                case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+                case g: h = (b - r) / d + 2; break;
+                case b: h = (r - g) / d + 4; break;
+                }
+
+                h /= 6;
+            }
+
+            return [ 
+                    Math.round(h * 360), 
+                    parseFloat((s * 100).toFixed(2)), 
+                    parseFloat((l * 100).toFixed(2))
+                ];
+        };
+    </script>
+</body>
+</html>
