@@ -7,6 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Grid Planner / Photo Colors Analyzer</title>
     <style>
+        button,
         input[type=file]::file-selector-button {
             margin: 10px;
             padding: 10px 20px;
@@ -17,6 +18,10 @@
             border-radius: 5px;
             cursor: pointer;
         }
+        button {
+            background-color: #f3aa4a;
+        }
+        button:hover,
         input[type=file]::file-selector-button:hover {
             background-color: #8c81ec;
         }
@@ -55,8 +60,13 @@
         .block:hover .remove {
             display: block;
         }
-        #checkboxLabel {
+        #checkboxLabel,
+        #sortByHues {
             display: none;
+        }
+        .loaded #checkboxLabel,
+        .loaded #sortByHues {
+            display: inline-block;
         }
         #feedback {
             font-size: 24;
@@ -104,47 +114,99 @@
     </style>
 </head>
 <body>
-    <h1>Grid Planner / Photo Colors Analyzer</h1>
-    <input type="file" id="fileInput" accept="image/*" multiple>
-    <label for="checkbox" id="checkboxLabel">
-        <input type="checkbox" id="checkbox" checked />
-        Show legend / only images
-    </label>
-    <br/>
-    <span id="feedback">
-        Copy-paste an image or upload multiple images. They will be ordered automatically by color hues.
-    </span>
-    <hr/>
-    <div id="loading"></div>
-    <div id="sorted"></div>
-    <div id="disclaimer">
-        <h3>How it works</h3>
-        <ul>
-            <li>You upload a photo or multiple photos</li>
-            <li>Only images can be uploaded</li>
-            <li>Magic happens only here, we are not saving anything</li>
-            <li>If you refresh the page, you start over</li>
-            <li>(Therefore, you don't need to register, you cannot save etc)</li>
-            <li>Color analyzing is done programmatically. Means, it is not perfect</li>
-            <li>Photo is analyzed pixel by pixel on upload to get main hue and color palette</li>
-            <li>We are trying to calculate accent color based on these: the one from the palette farthest from all the rest of the colors</li>
-            <li>You can drag photo to reorder</li>
-            
-        </ul>
+    <div id="wrapper">
+        <h1>Grid Planner / Photo Colors Analyzer</h1>
+        <input type="file" id="fileInput" accept="image/*" multiple>
+        <label for="checkbox" id="checkboxLabel">
+            <input type="checkbox" id="checkbox" checked />
+            Show legend / only images
+        </label>
+        <button id="sortByHues">Sort by hues</button>
+        <br/>
+        <span id="feedback">
+            Copy-paste an image or upload multiple images. They will be ordered automatically by color hues.
+        </span>
+        <hr/>
+        <div id="loading"></div>
+        <div id="sorted"></div>
+        <div id="disclaimer">
+            <h3>How it works</h3>
+            <ul>
+                <li>You upload a photo or multiple photos</li>
+                <li>Only images can be uploaded</li>
+                <li>Magic happens only here, we are not saving anything</li>
+                <li>If you refresh the page, you start over</li>
+                <li>(Therefore, you don't need to register, you cannot save etc)</li>
+                <li>Color analyzing is done programmatically. Means, it is not perfect</li>
+                <li>Photo is analyzed pixel by pixel on upload to get main hue and color palette</li>
+                <li>We are trying to calculate accent color based on these: the one from the palette farthest from all the rest of the colors</li>
+                <li>You can drag photo to reorder</li>
+                
+            </ul>
+        </div>
     </div>
     <script>
         let model = [];
         const html = {
+            wrapper: document.getElementById("wrapper"),
             loading: document.getElementById("loading"),
             feedback: document.getElementById("feedback"),
             fileInput: document.getElementById('fileInput'),
             sorted: document.getElementById("sorted"),
             checkbox: document.getElementById('checkbox'),
+        };
+
+        document.addEventListener('paste', async (event) => {
+            event.preventDefault();
+            console.log('PASTE', event);
+            for (const clipboardItem of event.clipboardData.files) {
+                if (clipboardItem.type.startsWith('image/')) {
+                    uploadImage({
+                        file: clipboardItem, 
+                        files: [...event.clipboardData.files],
+                        sortingMethod: sortByHue
+                    });
+                }
+            }
+        });
+
+        fileInput.addEventListener('change', function(event) {
+            console.group(`FILE UPLOADS`);
+            console.time(`FILE UPLOADS`);
+            [...event.target.files].forEach(file => uploadImage({
+                file: file, 
+                files: [...event.target.files],
+                sortingMethod: sortByHue
+            }));
+        });
+
+        html.checkbox.addEventListener('change', (event) => {
+            html.sorted.classList.toggle("hideLegend");
+        });
+
+        document.getElementById('sortByHues').addEventListener('click', (event) => {
+            sortAndReorder(model, sortByHue);
+        });
+
+        function sortAndReorder(model, sortingMethod) {
+            
+            const hueSorted = sortingMethod(model);
+            
+            console.group('GENERAL COLOR INFORMATION');
+            console.log('model', model);
+            console.log('hueSorted', hueSorted);
+            console.groupEnd('GENERAL COLOR INFORMATION');
+
+            hueSorted.forEach(item => {
+                const sortedBlock = document.getElementById(item.file);
+                html.sorted.append(sortedBlock);
+            });
         }
 
         function uploadImage({ file, files, sortingMethod }){
             console.log("Reading file", file.name);
             console.time(`FILE READ ${file.name}`);
+            html.wrapper.classList.toggle('loading');
 
             const block = document.createElement('div');
             block.classList.add('block');
@@ -231,24 +293,16 @@
                     console.timeEnd(`FILE READ ${file.name}`);
                     // only run once, after the last one uploaded
                     if(files.length === html.loading.childElementCount){
-                        // calculate hue distances
-                        const hueSorted = sortingMethod(model);
-                        // log the model
-                        console.group('GENERAL COLOR INFORMATION');
-                        console.log('model', model);
-                        console.log('hueSorted', hueSorted);
-                        console.groupEnd('GENERAL COLOR INFORMATION');
+                        
+                        sortAndReorder(model, sortByHue);
 
-                        hueSorted.forEach(item => {
-                            const sortedBlock = document.getElementById(item.file);
-                            html.sorted.append(sortedBlock);
-                        });
                         // drag n drop sort for desktop:
                         if(!window.mobileCheck()) {
                             new Sortable(html.sorted);
                         }
                         html.feedback.innerText = "Upload finished, photos ordered based on hues. Drag photo to reorder. Click x to remove";
-                        document.getElementById('checkboxLabel').style.display = 'inline-block';
+                        html.wrapper.classList.toggle('loaded');
+                        
                         console.log('>> FINISHED <<');
                         console.timeEnd(`FILE UPLOADS`);
                         console.groupEnd(`FILE UPLOADS`);
@@ -257,34 +311,6 @@
             };
             reader.readAsDataURL(file);
         };
-
-        document.addEventListener('paste', async (event) => {
-            event.preventDefault();
-            console.log('PASTE', event);
-            for (const clipboardItem of event.clipboardData.files) {
-                if (clipboardItem.type.startsWith('image/')) {
-                    uploadImage({
-                        file: clipboardItem, 
-                        files: [...event.clipboardData.files],
-                        sortingMethod: sortByHue
-                    });
-                }
-            }
-        });
-
-        fileInput.addEventListener('change', function(event) {
-            console.group(`FILE UPLOADS`);
-            console.time(`FILE UPLOADS`);
-            [...event.target.files].forEach(file => uploadImage({
-                file: file, 
-                files: [...event.target.files],
-                sortingMethod: sortByHue
-            }));
-        });
-
-        html.checkbox.addEventListener('change', (event) => {
-            html.sorted.classList.toggle("hideLegend");
-        });
 
         // hue sorting:
         function sortByHue (model) { 
