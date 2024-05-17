@@ -33,6 +33,9 @@
         }
         #sorted {
             min-height: 380px;
+        }
+        #sorted,
+        #loading {
             text-align: center;
         }
         .block {
@@ -61,11 +64,11 @@
             display: block;
         }
         #checkboxLabel,
-        #sortByHues {
+        button {
             display: none;
         }
         .loaded #checkboxLabel,
-        .loaded #sortByHues {
+        .loaded button {
             display: inline-block;
         }
         #feedback {
@@ -122,6 +125,7 @@
             Show legend / only images
         </label>
         <button id="sortByHues">Sort by hues</button>
+        <button id="sortBySaturation">Sort by saturation</button>
         <br/>
         <span id="feedback">
             Copy-paste an image or upload multiple images. They will be ordered automatically by color hues.
@@ -141,7 +145,6 @@
                 <li>Photo is analyzed pixel by pixel on upload to get main hue and color palette</li>
                 <li>We are trying to calculate accent color based on these: the one from the palette farthest from all the rest of the colors</li>
                 <li>You can drag photo to reorder</li>
-                
             </ul>
         </div>
     </div>
@@ -186,6 +189,9 @@
 
         document.getElementById('sortByHues').addEventListener('click', (event) => {
             sortAndReorder(model, sortByHue);
+        });
+        document.getElementById('sortBySaturation').addEventListener('click', (event) => {
+            sortAndReorder(model, sortBySaturation);
         });
 
         function sortAndReorder(model, sortingMethod) {
@@ -250,18 +256,24 @@
                     const hsl = {
                         main: rgbToHsl(rgb.main[0], rgb.main[1], rgb.main[2]),
                         palette: rgb.palette.map(([r, g, b]) => rgbToHsl(r, g, b)),
-                        accentColor: []
+                        all: [], // main + palette
+                        accentColor: [],
+                        avgSaturation: 0
                     }
+                    hsl.all = [hsl.main].concat(hsl.palette);
 
-                    hsl.accentColor = getAccentColor( 
-                        [hsl.main].concat(hsl.palette)
-                    );
+                    hsl.accentColor = getAccentColor(hsl.all);
+
+                    hsl.avgSaturation = hsl.all.reduce((sum, [h, s, l]) => {
+                            return sum + s;
+                        }, 0) / hsl.all.length;
 
                     model.push({
                         file: file.name,
                         mainColor: hsl.main, // [h,s,v]
                         palette: hsl.palette, // [[h,s,v],[h,s,v],[h,s,v]]
-                        accentColor: hsl.accentColor
+                        accentColor: hsl.accentColor,
+                        avgSaturation: hsl.avgSaturation
                     });
 
                     const mainColorDiv = document.createElement('div');
@@ -301,7 +313,7 @@
                             new Sortable(html.sorted);
                         }
                         html.feedback.innerText = "Upload finished, photos ordered based on hues. Drag photo to reorder. Click x to remove";
-                        html.wrapper.classList.toggle('loaded');
+                        html.wrapper.classList.add('loaded');
                         
                         console.log('>> FINISHED <<');
                         console.timeEnd(`FILE UPLOADS`);
@@ -315,6 +327,10 @@
         // hue sorting:
         function sortByHue (model) { 
             return model.slice().sort((a, b) => a.mainColor[0] - b.mainColor[0])
+        };
+        // hue sorting:
+        function sortBySaturation (model) { 
+            return model.slice().sort((a, b) => a.avgSaturation - b.avgSaturation)
         };
 
         // average n hue: 
