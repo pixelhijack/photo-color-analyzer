@@ -137,7 +137,7 @@
             checkbox: document.getElementById('checkbox'),
         }
 
-        function uploadImage(file, files){
+        function uploadImage({ file, files, sortingMethod }){
             console.log("Reading file", file.name);
             console.time(`FILE READ ${file.name}`);
 
@@ -227,7 +227,7 @@
                     // only run once, after the last one uploaded
                     if(files.length === html.loading.childElementCount){
                         // calculate hue distances
-                        const hueSorted = sortByHue(model);
+                        const hueSorted = sortingMethod(model);
                         // log the model
                         console.group('GENERAL COLOR INFORMATION');
                         console.log('model', model);
@@ -256,7 +256,11 @@
             console.log('PASTE', event);
             for (const clipboardItem of event.clipboardData.files) {
                 if (clipboardItem.type.startsWith('image/')) {
-                    uploadImage(clipboardItem, [...event.clipboardData.files]);
+                    uploadImage({
+                        file: clipboardItem, 
+                        files: [...event.clipboardData.files],
+                        sortingMethod: sortByHue
+                    });
                 }
             }
         });
@@ -264,7 +268,11 @@
         fileInput.addEventListener('change', function(event) {
             console.group(`FILE UPLOADS`);
             console.time(`FILE UPLOADS`);
-            [...event.target.files].forEach(file => uploadImage(file, [...event.target.files]));
+            [...event.target.files].forEach(file => uploadImage({
+                file: file, 
+                files: [...event.target.files],
+                sortingMethod: sortByHue
+            }));
         });
 
         html.checkbox.addEventListener('change', (event) => {
