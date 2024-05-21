@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.0/color-thief.umd.js"></script>
+    <!--script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.0/color-thief.umd.js"></script-->
+    <script src="https://unpkg.com/color.js@1.2.0/dist/color.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -145,7 +146,7 @@
                 <li>Photo is analyzed pixel by pixel on upload to get main hue and color palette</li>
                 <li>Accent color calculation is picked from the palette farthest from all the other colors</li>
                 <li>You can drag photo to reorder</li>
-                <li>Main color & palette analyze is done by color-thief.js (Lokesh Dhakar) & quantize.js (Nick Rabinowitz)</li>
+                <li>Main color & palette analyze is done by color.js</li>
                 <li>© 2024 Póth Attila</li>
             </ul>
         </div>
@@ -235,11 +236,12 @@
                 const image = new Image();
                 image.src = reader.result;
 
-                image.onload = function() {
+                image.onload = async function() {
                     const previewImage = document.createElement('img');
                     previewImage.src = reader.result;
                     previewImage.classList.add('previewImage');
                     block.append(previewImage);
+                    html.feedback.innerText = `Please wait...analysing ${file.name}`;
 
                     const canvas = document.createElement('canvas');
                     const context = canvas.getContext('2d');
@@ -249,10 +251,10 @@
 
                     context.drawImage(image, 0, 0, image.width, image.height);
 
-                    const colorThief = new ColorThief();
+                    // const colorThief = new ColorThief();
                     const rgb = {
-                        main: colorThief.getColor(image),
-                        palette: colorThief.getPalette(image)
+                        main: await colorjs.average(image),
+                        palette: await colorjs.prominent(image, { amount: 20, group: 60 })
                     }
 
                     const hsl = {
@@ -294,7 +296,7 @@
                     block.append(accentColorDiv);
                     block.append(document.createElement('br'));
 
-                    hsl.palette.forEach(([h, s, l]) => {
+                    hsl.palette.slice(0, 10).forEach(([h, s, l]) => {
                         const colorDiv = document.createElement('div');
                         colorDiv.setAttribute('title', `hsl(${h} ${s}% ${l}%)`);
                         colorDiv.classList.add('paletteColor');
@@ -302,7 +304,6 @@
                         block.append(colorDiv);
                     });
                     html.loading.append(block);
-                    html.feedback.innerText = "Uploading, analyzing colors, reordering... please wait";
 
                     console.timeEnd(`FILE READ ${file.name}`);
                     // only run once, after the last one uploaded
