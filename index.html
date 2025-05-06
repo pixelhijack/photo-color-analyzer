@@ -103,6 +103,8 @@
             width: 36px;
             height: 36px;
             display: inline-block;
+            font-size: 8px;
+            line-height: 36px;
         }
         .accentColor {
             font-size: 10px;
@@ -301,6 +303,7 @@
                         colorDiv.setAttribute('title', `hsl(${h} ${s}% ${l}%)`);
                         colorDiv.classList.add('paletteColor');
                         colorDiv.style.backgroundColor = `hsl(${h} ${s}% ${l}%)`;
+                        colorDiv.innerText = `${h}`;
                         block.append(colorDiv);
                     });
                     html.loading.append(block);
